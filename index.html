@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>wechaobishe - 类幸存者游戏</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            font-family: "Microsoft YaHei", sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #游戏容器 {
+            position: relative;
+            width: 800px;
+            height: 500px;
+            background-color: #34495e;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            border: 2px solid #bdc3c7;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+        .界面层 {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(44, 62, 80, 0.9);
+            z-index: 20;
+        }
+        .隐藏 {
+            display: none !important;
+        }
+        h1 { color: #f1c40f; margin-bottom: 10px; }
+        .选项组 { margin: 15px 0; display: flex; gap: 15px; }
+        .卡片 {
+            background: #2c3e50; border: 2px solid #7f8c8d; border-radius: 8px;
+            padding: 15px; cursor: pointer; text-align: center; transition: 0.2s;
+        }
+        .卡片:hover, .卡片.选中 { border-color: #f1c40f; background: #34495e; transform: scale(1.05); }
+        .角色表情 { font-size: 40px; margin-bottom: 10px; }
+        .按钮 {
+            padding: 10px 30px; font-size: 18px; cursor: pointer; background: #e74c3c;
+            color: white; border: none; border-radius: 5px; margin-top: 10px; font-weight: bold;
+            transition: 0.2s;
+        }
+        .按钮:hover { opacity: 0.8; transform: scale(1.05); }
+        
+        #游戏UI {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 5; padding: 10px; box-sizing: border-box;
+        }
+        .状态栏 { display: flex; justify-content: space-between; font-size: 16px; font-weight: bold; text-shadow: 1px 1px 2px black;}
+        .进度条容器 { width: 150px; height: 15px; background: #222; border: 1px solid #777; margin-top: 5px;}
+        .血条 { height: 100%; background: #e74c3c; width: 100%; transition: 0.2s;}
+        .能量条 { height: 100%; background: #3498db; width: 0%; transition: 0.2s;}
+
+        /* 新增控制栏样式 */
+        #顶部控制栏 {
+            position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 20px; z-index: 10; pointer-events: auto;
+        }
+        .倍速框 {
+            background: rgba(0,0,0,0.6); padding: 5px 10px; border-radius: 8px;
+            display: flex; gap: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        .倍速钮 {
+            background: #2ecc71; color: white; border: 2px solid #27ae60;
+            padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.1s;
+        }
+        .倍速钮:hover { background: #27ae60; }
+        .倍速钮.激活 { background: #f1c40f; border-color: #f39c12; color: #2c3e50; }
+        .菜单钮 {
+            background: #e67e22; color: white; border: 2px solid #d35400;
+            padding: 4px 15px; border-radius: 4px; cursor: pointer; font-weight: bold;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5); transition: 0.1s;
+        }
+        .菜单钮:hover { background: #d35400; }
+    </style>
+</head>
+<body>
+
+<div id="游戏容器">
+    <!-- 游戏画布 -->
+    <canvas id="游戏画布" width="800" height="500"></canvas>
+
+    <!-- 游戏进行中的 UI -->
+    <div id="游戏UI" class="隐藏">
+        <div class="状态栏">
+            <div>
+                <span id="当前角色名称">角色</span> <span id="当前阶段显示">阶段: 0</span>
+                <div class="进度条容器"><div class="血条" id="血条显示"></div></div>
+                <div class="进度条容器"><div class="能量条" id="能量条显示"></div></div>
+            </div>
+            <div style="text-align: right;">
+                <div id="难度显示">难度: 简单</div>
+                <div id="时间显示" style="font-size: 24px; color: #f1c40f;">00:00</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 顶部倍速与菜单控制 -->
+    <div id="顶部控制栏" class="隐藏">
+        <div class="倍速框">
+            <button id="btn_1x" class="倍速钮 激活" onclick="设置倍速(1)">1x</button>
+            <button id="btn_2x" class="倍速钮" onclick="设置倍速(2)">2x</button>
+            <button id="btn_3x" class="倍速钮" onclick="设置倍速(3)">3x</button>
+            <button id="btn_5x" class="倍速钮" onclick="设置倍速(5)">5x</button>
+        </div>
+        <button class="菜单钮" onclick="暂停游戏()">菜单 ⏸</button>
+    </div>
+
+    <!-- 主菜单 -->
+    <div id="主菜单" class="界面层">
+        <h1>wechaobishe</h1>
+        <h3 style="margin-top:0;">选择角色</h3>
+        <div class="选项组" id="角色选择区"></div>
+        <h3>选择难度</h3>
+        <div class="选项组" id="难度选择区"></div>
+        <button class="按钮" onclick="开始游戏()">开始游戏</button>
+    </div>
+
+    <!-- 暂停界面 -->
+    <div id="暂停界面" class="界面层 隐藏">
+        <h1 style="color: #3498db; margin-bottom: 30px;">游戏暂停</h1>
+        <button class="按钮" style="background: #2ecc71;" onclick="继续游戏()">继续游戏 ▶</button>
+        <button class="按钮" style="background: #e67e22;" onclick="重新开始()">重新开始 ↻</button>
+        <button class="按钮" style="background: #95a5a6;" onclick="返回菜单()">回到主菜单 🏠</button>
+    </div>
+
+    <!-- 结算界面 -->
+    <div id="结算界面" class="界面层 隐藏">
+        <h1 id="结算标题">游戏结束</h1>
+        <p id="结算信息" style="font-size: 18px; margin: 20px;"></p>
+        <button class="按钮" onclick="返回菜单()">返回菜单</button>
+    </div>
+</div>
+
+<script>
+    // --- 核心工具函数 ---
+    const 限制 = (值, 最小 = 0, 最大 = 100) => Math.max(最小, Math.min(最大, 值));
+    const 距离 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+    // --- 游戏平衡调优数据 ---
+    // 角色属性全面调整：射速加快（攻击间隔缩短）增加前期爽快感，专属技能加强以应对后期压力
+    const 预设角色列表 =[
+        {
+            名称: "均衡小子", 样式: "😀",
+            属性: { 生命值: 100, 移动值: 100, 能力值: 0, 伤害值: 40, 范围值: 40 },
+            攻击间隔: 0.3, // 更快的射速
+            专属能力: (角色) => { 
+                角色.属性.生命值 = 限制(角色.属性.生命值 + 50); 
+                角色.属性.伤害值 = 限制(角色.属性.伤害值 + 20); 
+                创建飘字(角色.x, 角色.y, "大治愈 & 增伤!", "#2ecc71");
+            }
+        },
+        {
+            名称: "疾风行者", 样式: "😎",
+            属性: { 生命值: 80, 移动值: 100, 能力值: 0, 伤害值: 20, 范围值: 80 },
+            攻击间隔: 0.15, // 冲锋枪般的射速
+            专属能力: (角色) => { 
+                角色.属性.范围值 = 限制(角色.属性.范围值 + 20);
+                角色.属性.伤害值 = 限制(角色.属性.伤害值 + 10);
+                创建飘字(角色.x, 角色.y, "射程突破!", "#f1c40f");
+            }
+        },
+        {
+            名称: "重装猛男", 样式: "🤡",
+            属性: { 生命值: 100, 移动值: 50, 能力值: 0, 伤害值: 80, 范围值: 30 },
+            攻击间隔: 0.6, // 单发高爆发
+            专属能力: (角色) => { 
+                角色.属性.范围值 = 限制(角色.属性.范围值 + 40);
+                角色.属性.生命值 = 限制(角色.属性.生命值 + 30);
+                创建飘字(角色.x, 角色.y, "火力覆盖!", "#e74c3c");
+            }
+        }
+    ];
+
+    const 难度配置表 = {
+        '简单': { 胜利时间: 300, 刷怪间隔倍率: 1.2, 怪物属性倍率: 0.8 },
+        '中等': { 胜利时间: 300, 刷怪间隔倍率: 1.0, 怪物属性倍率: 1.0 },
+        '困难': { 胜利时间: 600, 刷怪间隔倍率: 0.7, 怪物属性倍率: 1.3 },
+        '无尽': { 胜利时间: Infinity, 刷怪间隔倍率: 0.6, 怪物属性倍率: 1.0 }
+    };
+
+    // 敌人全面调整：前期低血量体验割草，后期大幅度提升
+    const 敌人阶段库 =[
+        { 阶段: 0, 名称: "小绿怪", 样式: "🦠", 属性: { 生命值: 15, 移动值: 20, 智商值: 10, 伤害值: 5, 范围值: 5 } },
+        { 阶段: 1, 名称: "小恶魔", 样式: "👿", 属性: { 生命值: 30, 移动值: 40, 智商值: 30, 伤害值: 10, 范围值: 5 } },
+        { 阶段: 2, 名称: "丧尸", 样式: "🧟", 属性: { 生命值: 50, 移动值: 30, 智商值: 50, 伤害值: 15, 范围值: 5 } },
+        { 阶段: 3, 名称: "吸血鬼", 样式: "🧛", 属性: { 生命值: 70, 移动值: 60, 智商值: 80, 伤害值: 20, 范围值: 10 } },
+        { 阶段: 4, 名称: "恶龙", 样式: "🐉", 属性: { 生命值: 100, 移动值: 50, 智商值: 100, 伤害值: 30, 范围值: 15 } },
+    ];
+
+    // --- 全局状态变量 ---
+    let 画布 = document.getElementById('游戏画布');
+    let 绘图上下文 = 画布.getContext('2d');
+    let 游戏状态 = '菜单'; // '菜单', '进行中', '暂停', '结束'
+    let 游戏倍速 = 1;
+    let 选定角色索引 = 0;
+    let 选定难度 = '简单';
+
+    let 上一帧时间 = 0;
+    let 游戏数据 = {
+        存活时间: 0,
+        当前阶段: 0,
+        刷怪倒计时: 0,
+        难度参数: null
+    };
+
+    let 按键状态 = { W: false, A: false, S: false, D: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false };
+    
+    // 实体数组
+    let 主角 = null;
+    let 敌人列表 = [];
+    let 弹幕列表 =[];
+    let 飘字列表 =[];
+
+    // --- 数据结构 ---
+
+    class 角色类 {
+        constructor(预设数据) {
+            this.名称 = 预设数据.名称;
+            this.样式 = 预设数据.样式;
+            this.属性 = {
+                生命值: 限制(预设数据.属性.生命值),
+                移动值: 限制(预设数据.属性.移动值),
+                能力值: 0, 
+                伤害值: 限制(预设数据.属性.伤害值),
+                范围值: 限制(预设数据.属性.范围值)
+            };
+            this.最大生命值 = this.属性.生命值;
+            this.专属能力 = 预设数据.专属能力;
+            this.攻击间隔 = 预设数据.攻击间隔;
+            this.攻击计时 = 0;
+            
+            this.x = 画布.width / 2;
+            this.y = 画布.height / 2;
+        }
+
+        更新逻辑(时间差) {
+            // 移动逻辑公式: 移动速度 = 100 + 移动值 / 5
+            let 移动速度 = 100 + (this.属性.移动值 / 5);
+            let 移动X = 0, 移动Y = 0;
+
+            if (按键状态.W || 按键状态.ArrowUp) 移动Y -= 1;
+            if (按键状态.S || 按键状态.ArrowDown) 移动Y += 1;
+            if (按键状态.A || 按键状态.ArrowLeft) 移动X -= 1;
+            if (按键状态.D || 按键状态.ArrowRight) 移动X += 1;
+
+            if (移动X !== 0 || 移动Y !== 0) {
+                let 长度 = Math.hypot(移动X, 移动Y);
+                this.x += (移动X / 长度) * 移动速度 * 时间差;
+                this.y += (移动Y / 长度) * 移动速度 * 时间差;
+            }
+
+            this.x = Math.max(15, Math.min(画布.width - 15, this.x));
+            this.y = Math.max(15, Math.min(画布.height - 15, this.y));
+
+            // 能力值增长（公式要求：每秒加2）-> 到100即50秒释放一次终极技
+            this.属性.能力值 += 2 * 时间差; 
+            if (this.属性.能力值 >= 100) {
+                this.属性.能力值 = 0;
+                this.专属能力(this);
+            }
+
+            // 攻击逻辑
+            this.攻击计时 -= 时间差;
+            if (this.攻击计时 <= 0) {
+                this.尝试攻击();
+            }
+        }
+
+        尝试攻击() {
+            if (敌人列表.length === 0) return;
+            // 范围计算公式：(范围值 + 20) * 5
+            let 最大攻击距离 = (this.属性.范围值 + 20) * 5;
+            
+            let 最近敌人 = null;
+            let 最小距离 = Infinity;
+            for (let 敌 of 敌人列表) {
+                let 距 = 距离(this, 敌);
+                if (距 < 最小距离) {
+                    最小距离 = 距;
+                    最近敌人 = 敌;
+                }
+            }
+
+            if (最小距离 <= 最大攻击距离 && 最近敌人) {
+                let 角度 = Math.atan2(最近敌人.y - this.y, 最近敌人.x - this.x);
+                弹幕列表.push(new 弹幕类(this.x, this.y, 角度, this.属性.伤害值));
+                this.攻击计时 = this.攻击间隔;
+            }
+        }
+
+        绘制(上下文) {
+            上下文.font = "30px Arial";
+            上下文.textAlign = "center";
+            上下文.textBaseline = "middle";
+            上下文.fillText(this.样式, this.x, this.y);
+        }
+    }
+
+    class 敌人类 {
+        constructor(预设数据, 阶段属性倍率, X, Y) {
+            this.名称 = 预设数据.名称;
+            this.样式 = 预设数据.样式;
+            this.属性 = {
+                生命值: 限制(预设数据.属性.生命值 * 阶段属性倍率, 1, 9999),
+                移动值: 限制(预设数据.属性.移动值 * 阶段属性倍率),
+                智商值: 限制(预设数据.属性.智商值),
+                伤害值: 限制(预设数据.属性.伤害值 * 阶段属性倍率),
+                范围值: 限制(预设数据.属性.范围值)
+            };
+            this.最大生命值 = this.属性.生命值;
+            this.攻击间隔 = 1.0; 
+            this.攻击计时 = 0;
+            
+            this.x = X;
+            this.y = Y;
+
+            this.规划倒计时 = 0;
+            this.移动向量 = { x: 0, y: 0 };
+        }
+
+        更新逻辑(时间差) {
+            // 移动规划逻辑
+            this.规划倒计时 -= 时间差;
+            if (this.规划倒计时 <= 0) {
+                // 规划时间公式: 0.05 * (100 - 智商值) + 0.1
+                this.规划倒计时 = 0.05 * (100 - this.属性.智商值) + 0.1;
+                
+                let 距离X = 主角.x - this.x;
+                let 距离Y = 主角.y - this.y;
+                let 长度 = Math.hypot(距离X, 距离Y);
+                if (长度 > 0) {
+                    this.移动向量.x = 距离X / 长度;
+                    this.移动向量.y = 距离Y / 长度;
+                }
+            }
+
+            let 速度 = 20 + (this.属性.移动值 / 2);
+            this.x += this.移动向量.x * 速度 * 时间差;
+            this.y += this.移动向量.y * 速度 * 时间差;
+
+            // 攻击逻辑
+            let 攻击判定距离 = 20 + this.属性.范围值 / 10; 
+            this.攻击计时 -= 时间差;
+            if (距离(this, 主角) <= 攻击判定距离) {
+                if (this.攻击计时 <= 0) {
+                    主角.属性.生命值 = 限制(主角.属性.生命值 - this.属性.伤害值);
+                    创建飘字(主角.x, 主角.y - 20, `-${Math.floor(this.属性.伤害值)}`, "#e74c3c");
+                    this.攻击计时 = this.攻击间隔;
+                    
+                    if (主角.属性.生命值 <= 0) {
+                        游戏结束(false);
+                    }
+                }
+            }
+        }
+
+        绘制(上下文) {
+            上下文.font = "24px Arial";
+            上下文.textAlign = "center";
+            上下文.textBaseline = "middle";
+            上下文.fillText(this.样式, this.x, this.y);
+            
+            上下文.fillStyle = "#2c3e50";
+            上下文.fillRect(this.x - 15, this.y - 20, 30, 4);
+            上下文.fillStyle = "#e74c3c";
+            上下文.fillRect(this.x - 15, this.y - 20, 30 * (this.属性.生命值 / this.最大生命值), 4);
+        }
+    }
+
+    class 弹幕类 {
+        constructor(x, y, 角度, 伤害值) {
+            this.弹幕样式 = "🔸";
+            this.弹幕速度 = 400; 
+            this.x = x;
+            this.y = y;
+            this.vx = Math.cos(角度) * this.弹幕速度;
+            this.vy = Math.sin(角度) * this.弹幕速度;
+            this.伤害 = 伤害值;
+            this.是否存活 = true;
+        }
+
+        更新逻辑(时间差) {
+            this.x += this.vx * 时间差;
+            this.y += this.vy * 时间差;
+
+            if (this.x < 0 || this.x > 画布.width || this.y < 0 || this.y > 画布.height) {
+                this.是否存活 = false;
+            }
+
+            for (let 敌 of 敌人列表) {
+                if (距离(this, 敌) < 20) {
+                    敌.属性.生命值 -= this.伤害;
+                    创建飘字(敌.x, 敌.y - 15, `-${Math.floor(this.伤害)}`, "white");
+                    this.是否存活 = false;
+                    break; 
+                }
+            }
+        }
+
+        绘制(上下文) {
+            上下文.font = "16px Arial";
+            上下文.textAlign = "center";
+            上下文.textBaseline = "middle";
+            上下文.fillText(this.弹幕样式, this.x, this.y);
+        }
+    }
+
+    class 飘字类 {
+        constructor(x, y, 文本, 颜色) {
+            this.x = x + (Math.random() * 20 - 10);
+            this.y = y;
+            this.文本 = 文本;
+            this.颜色 = 颜色;
+            this.存活时间 = 0.6; 
+            this.透明度 = 1.0;
+        }
+
+        更新逻辑(时间差) {
+            this.y -= 40 * 时间差; 
+            this.存活时间 -= 时间差;
+            this.透明度 = this.存活时间 / 0.6;
+        }
+
+        绘制(上下文) {
+            上下文.globalAlpha = Math.max(0, this.透明度);
+            上下文.font = "bold 16px Arial";
+            上下文.fillStyle = this.颜色;
+            上下文.textAlign = "center";
+            上下文.fillText(this.文本, this.x, this.y);
+            上下文.globalAlpha = 1.0;
+        }
+    }
+
+    function 创建飘字(x, y, 文本, 颜色) {
+        飘字列表.push(new 飘字类(x, y, 文本, 颜色));
+    }
+
+
+    // --- 游戏流程控制 ---
+
+    function 初始化菜单() {
+        const 角色区 = document.getElementById('角色选择区');
+        预设角色列表.forEach((角色, 索引) => {
+            let 卡片 = document.createElement('div');
+            卡片.className = `卡片 ${索引 === 0 ? '选中' : ''}`;
+            卡片.innerHTML = `
+                <div class="角色表情">${角色.样式}</div>
+                <div style="font-weight:bold; margin-bottom:5px;">${角色.名称}</div>
+                <div style="font-size:12px; color:#bdc3c7;">
+                    HP:${角色.属性.生命值} | 移:${角色.属性.移动值}<br>
+                    伤:${角色.属性.伤害值} | 距:${角色.属性.范围值}
+                </div>
+            `;
+            卡片.onclick = () => {
+                选定角色索引 = 索引;
+                document.querySelectorAll('#角色选择区 .卡片').forEach(c => c.classList.remove('选中'));
+                卡片.classList.add('选中');
+            };
+            角色区.appendChild(卡片);
+        });
+
+        const 难度区 = document.getElementById('难度选择区');
+        Object.keys(难度配置表).forEach((难度, 索引) => {
+            let 卡片 = document.createElement('div');
+            卡片.className = `卡片 ${索引 === 0 ? '选中' : ''}`;
+            卡片.innerHTML = `<div style="font-weight:bold; font-size:18px;">${难度}</div>`;
+            卡片.onclick = () => {
+                选定难度 = 难度;
+                document.querySelectorAll('#难度选择区 .卡片').forEach(c => c.classList.remove('选中'));
+                卡片.classList.add('选中');
+            };
+            难度区.appendChild(卡片);
+        });
+        
+        requestAnimationFrame(游戏主循环); // 启动主循环监听
+    }
+
+    function 设置倍速(倍数) {
+        游戏倍速 = 倍数;
+        document.querySelectorAll('.倍速钮').forEach(btn => btn.classList.remove('激活'));
+        document.getElementById(`btn_${倍数}x`).classList.add('激活');
+    }
+
+    function 开始游戏() {
+        document.getElementById('主菜单').classList.add('隐藏');
+        document.getElementById('结算界面').classList.add('隐藏');
+        document.getElementById('暂停界面').classList.add('隐藏');
+        document.getElementById('游戏UI').classList.remove('隐藏');
+        document.getElementById('顶部控制栏').classList.remove('隐藏');
+        
+        主角 = new 角色类(预设角色列表[选定角色索引]);
+        游戏数据.难度参数 = 难度配置表[选定难度];
+        游戏数据.存活时间 = 0;
+        游戏数据.当前阶段 = 0;
+        游戏数据.刷怪倒计时 = 0;
+        
+        敌人列表 = [];
+        弹幕列表 =[];
+        飘字列表 =[];
+        
+        document.getElementById('当前角色名称').innerText = 主角.名称;
+        document.getElementById('难度显示').innerText = `难度: ${选定难度}`;
+        
+        设置倍速(1); 
+        按键状态 = { W: false, A: false, S: false, D: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false };
+
+        上一帧时间 = performance.now();
+        游戏状态 = '进行中';
+    }
+
+    function 暂停游戏() {
+        if(游戏状态 === '进行中') {
+            游戏状态 = '暂停';
+            document.getElementById('暂停界面').classList.remove('隐藏');
+            document.getElementById('顶部控制栏').classList.add('隐藏');
+        }
+    }
+
+    function 继续游戏() {
+        上一帧时间 = performance.now(); // 重置时间差，防止穿模
+        游戏状态 = '进行中';
+        document.getElementById('暂停界面').classList.add('隐藏');
+        document.getElementById('顶部控制栏').classList.remove('隐藏');
+    }
+
+    function 重新开始() {
+        开始游戏();
+    }
+
+    function 返回菜单() {
+        游戏状态 = '菜单';
+        document.getElementById('暂停界面').classList.add('隐藏');
+        document.getElementById('结算界面').classList.add('隐藏');
+        document.getElementById('游戏UI').classList.add('隐藏');
+        document.getElementById('顶部控制栏').classList.add('隐藏');
+        document.getElementById('主菜单').classList.remove('隐藏');
+        
+        绘图上下文.fillStyle = "#34495e";
+        绘图上下文.fillRect(0, 0, 画布.width, 画布.height);
+    }
+
+    function 游戏结束(是否胜利) {
+        游戏状态 = '结束';
+        document.getElementById('顶部控制栏').classList.add('隐藏');
+        document.getElementById('游戏UI').classList.add('隐藏');
+        let 界面 = document.getElementById('结算界面');
+        界面.classList.remove('隐藏');
+        
+        document.getElementById('结算标题').innerText = 是否胜利 ? "游戏胜利！" : "游戏结束";
+        document.getElementById('结算标题').style.color = 是否胜利 ? "#f1c40f" : "#e74c3c";
+        
+        let 分钟 = Math.floor(游戏数据.存活时间 / 60);
+        let 秒 = Math.floor(游戏数据.存活时间 % 60);
+        document.getElementById('结算信息').innerText = `生存时间: ${分钟}分 ${秒}秒 \n 击杀并挺过阶段: ${游戏数据.当前阶段}`;
+    }
+
+
+    // --- 游戏核心循环 ---
+
+    function 游戏主循环(当前时间) {
+        let 实际流逝时间 = (当前时间 - 上一帧时间) / 1000;
+        上一帧时间 = 当前时间;
+
+        if (游戏状态 === '进行中') {
+            // 限制单帧最大现实流逝时间防止切换标签卡顿导致意外
+            实际流逝时间 = Math.min(实际流逝时间, 0.1); 
+            let 游戏时间差 = 实际流逝时间 * 游戏倍速;
+            
+            // 为了防止高倍速下子弹穿模，对逻辑更新进行分步处理（最大物理步长 0.02秒）
+            let 最大步长 = 0.02;
+            while(游戏时间差 > 0) {
+                let dt = Math.min(游戏时间差, 最大步长);
+                更新逻辑(dt);
+                游戏时间差 -= dt;
+            }
+            渲染画面();
+        } 
+        
+        requestAnimationFrame(游戏主循环);
+    }
+
+    function 更新逻辑(时间差) {
+        游戏数据.存活时间 += 时间差;
+
+        // 阶段升级 (每60秒升级一个阶段)
+        游戏数据.当前阶段 = Math.min(
+            Math.floor(游戏数据.存活时间 / 60), 
+            敌人阶段库.length - 1
+        );
+        let 实际阶段计算值 = Math.floor(游戏数据.存活时间 / 60);
+
+        if (游戏数据.存活时间 >= 游戏数据.难度参数.胜利时间) {
+            游戏结束(true);
+            return;
+        }
+
+        // 刷怪逻辑优化：前期平缓，后期同屏数量多，形成尸海挑战
+        游戏数据.刷怪倒计时 -= 时间差;
+        if (游戏数据.刷怪倒计时 <= 0) {
+            // 后期每次生成多个敌人
+            let 每次生成数量 = 1 + Math.floor(实际阶段计算值 / 1.5); 
+            for(let i=0; i<每次生成数量; i++) {
+                生成敌人(实际阶段计算值);
+            }
+            
+            // 刷怪间隔随着阶段逐渐缩短，增强紧凑感
+            let 基础间隔 = 0.8 - (实际阶段计算值 * 0.1);
+            基础间隔 = Math.max(0.25, 基础间隔);
+            游戏数据.刷怪倒计时 = 基础间隔 * 游戏数据.难度参数.刷怪间隔倍率;
+        }
+
+        主角.更新逻辑(时间差);
+
+        for (let i = 敌人列表.length - 1; i >= 0; i--) {
+            let 敌 = 敌人列表[i];
+            敌.更新逻辑(时间差);
+            if (敌.属性.生命值 <= 0) {
+                敌人列表.splice(i, 1);
+            }
+        }
+
+        for (let i = 弹幕列表.length - 1; i >= 0; i--) {
+            let 弹 = 弹幕列表[i];
+            弹.更新逻辑(时间差);
+            if (!弹.是否存活) {
+                弹幕列表.splice(i, 1);
+            }
+        }
+
+        for (let i = 飘字列表.length - 1; i >= 0; i--) {
+            let 字 = 飘字列表[i];
+            字.更新逻辑(时间差);
+            if (字.存活时间 <= 0) {
+                飘字列表.splice(i, 1);
+            }
+        }
+
+        更新UI();
+    }
+
+    function 生成敌人(阶段系数) {
+        let 可选敌人 = 敌人阶段库.filter(e => e.阶段 <= 游戏数据.当前阶段);
+        let 基础敌人数据 = 可选敌人[Math.floor(Math.random() * 可选敌人.length)];
+        
+        let 属性倍率 = 游戏数据.难度参数.怪物属性倍率 * (1 + 阶段系数 * 0.2);
+
+        let x, y;
+        if (Math.random() > 0.5) {
+            x = Math.random() > 0.5 ? -30 : 画布.width + 30;
+            y = Math.random() * 画布.height;
+        } else {
+            x = Math.random() * 画布.width;
+            y = Math.random() > 0.5 ? -30 : 画布.height + 30;
+        }
+
+        敌人列表.push(new 敌人类(基础敌人数据, 属性倍率, x, y));
+    }
+
+    function 更新UI() {
+        let 分钟 = String(Math.floor(游戏数据.存活时间 / 60)).padStart(2, '0');
+        let 秒 = String(Math.floor(游戏数据.存活时间 % 60)).padStart(2, '0');
+        document.getElementById('时间显示').innerText = `${分钟}:${秒}`;
+        document.getElementById('当前阶段显示').innerText = `阶段: ${游戏数据.当前阶段}`;
+        
+        let 血量百分比 = Math.max(0, 主角.属性.生命值 / 主角.最大生命值 * 100);
+        document.getElementById('血条显示').style.width = `${血量百分比}%`;
+        
+        let 能量百分比 = Math.max(0, 主角.属性.能力值);
+        document.getElementById('能量条显示').style.width = `${能量百分比}%`;
+    }
+
+    function 渲染画面() {
+        绘图上下文.fillStyle = "#34495e";
+        绘图上下文.fillRect(0, 0, 画布.width, 画布.height);
+
+        绘图上下文.strokeStyle = "#2c3e50";
+        绘图上下文.lineWidth = 1;
+        for(let i=0; i<画布.width; i+=50) {
+            绘图上下文.beginPath(); 绘图上下文.moveTo(i, 0); 绘图上下文.lineTo(i, 画布.height); 绘图上下文.stroke();
+        }
+        for(let j=0; j<画布.height; j+=50) {
+            绘图上下文.beginPath(); 绘图上下文.moveTo(0, j); 绘图上下文.lineTo(画布.width, j); 绘图上下文.stroke();
+        }
+
+        弹幕列表.forEach(弹 => 弹.绘制(绘图上下文));
+        敌人列表.forEach(敌 => 敌.绘制(绘图上下文));
+        主角.绘制(绘图上下文);
+        飘字列表.forEach(字 => 字.绘制(绘图上下文));
+    }
+
+    // --- 键盘事件监听 ---
+    window.addEventListener('keydown', (e) => {
+        if (按键状态.hasOwnProperty(e.key) || 按键状态.hasOwnProperty(e.key.toUpperCase())) {
+            let key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+            if(按键状态[key] !== undefined) 按键状态[key] = true;
+        }
+    });
+
+    window.addEventListener('keyup', (e) => {
+        if (按键状态.hasOwnProperty(e.key) || 按键状态.hasOwnProperty(e.key.toUpperCase())) {
+            let key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+            if(按键状态[key] !== undefined) 按键状态[key] = false;
+        }
+    });
+
+    // 禁用右键菜单防止干扰操作
+    document.addEventListener('contextmenu', event => event.preventDefault());
+
+    // 运行初始化
+    初始化菜单();
+
+</script>
+</body>
+</html>
